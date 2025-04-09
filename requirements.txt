@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+requests
+Beautifulsoup4
+chromadb
+sentence-transformers
+google.generativeai
+openai-whisper
+pydantic
+
+# how to become an ai engineer?

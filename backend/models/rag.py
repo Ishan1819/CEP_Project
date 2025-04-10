@@ -136,16 +136,16 @@
 
 
 
-import requests
-from bs4 import BeautifulSoup
-from datasets import load_dataset
-import chromadb
-from sentence_transformers import SentenceTransformer
-import google.generativeai as genai
-import whisper  # Import Whisper for speech-to-text
-import sounddevice as sd
-import numpy as np
-from backend.models.whisper import record_and_transcribe
+# import requests
+# from bs4 import BeautifulSoup
+# from datasets import load_dataset
+# import chromadb
+# from sentence_transformers import SentenceTransformer
+# import google.generativeai as genai
+# import whisper  # Import Whisper for speech-to-text
+# import sounddevice as sd
+# import numpy as np
+# from backend.models.whisper import record_and_transcribe
 # --- Whisper Speech-to-Text Function ---
 # def get_speech_input():
 #     print("Listening... Speak your query.")
@@ -161,33 +161,16 @@ from backend.models.whisper import record_and_transcribe
 #     return result["text"]
 
 # --- Extract text from website ---
-def extract_text_from_website(url):
-    try:
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        paragraphs = soup.find_all("p")
-        return " ".join([p.get_text() for p in paragraphs]) if paragraphs else "No content available."
-    except requests.RequestException as e:
-        print(f"Error fetching {url}: {e}")
-        return ""
-
-# --- Load dataset from Hugging Face and chunk ---
-def load_hf_dataset_chunks(dataset_path="Pradeep016/career-guidance-qa-dataset", chunk_size=10):
-    try:
-        dataset = load_dataset(dataset_path, split="train")  # Automatically gets the CSV
-        rows = [f"{row['question']} {row['answer']}" for row in dataset if row['question'] and row['answer']]
-        
-        chunks = []
-        for i in range(0, len(rows), chunk_size):
-            chunk = " ".join(rows[i:i + chunk_size])
-            chunks.append(chunk)
-        return chunks
-    except Exception as e:
-        print(f"Error loading dataset: {e}")
-        return []
+import os
+import requests
+from bs4 import BeautifulSoup
+from datasets import load_dataset
+import chromadb
+from sentence_transformers import SentenceTransformer
+import google.generativeai as genai
 
 # --- Configuration ---
+DATA_READY_FLAG = "./data_ready.flag"  # File to indicate data is already processed
 career_urls = [
     "https://leverageedu.com/blog/how-to-become-an-architect/",
     "https://leverageedu.com/blog/film-actor/",
@@ -221,42 +204,70 @@ career_urls = [
     "https://leverageedu.com/blog/category/chartered-accountancy/",
     "https://www.lpu.in/blog/top-career-options-after-12th-science-pcm-best-opportunities-paths/",
     "https://nexisschool.com/career-options-after-12th/",
-    "https://www.upgrad.com/blog/top-career-options-after-engineering/",
-    "https://idreamcareer.com/blog/career-options-in-art/",
-    "https://idreamcareer.com/blog/career-options-after-12th/#Career_Options_After_12th_PCM",
-    "https://idreamcareer.com/blog/courses-after-12th-pcm/",
-    "https://idreamcareer.com/blog/which-career-has-more-scope-in-future/",
-    "https://idreamcareer.com/blog/career-in-travel-and-tourism-2/",
-    "https://idreamcareer.com/blog/career-in-finance/",
-    "https://idreamcareer.com/blog/business-courses-after-12th/"
-    "https://idreamcareer.com/blog/how-to-become-a-doctor-in-india/",
-    "https://idreamcareer.com/career/career-as-a-pharmacists/",
-    "https://idreamcareer.com/blog/lab-technician-course-after-12th/",
-    "https://idreamcareer.com/blog/mass-communication-courses-after-12th/",
-    "https://idreamcareer.com/blog/how-to-become-a-psychologist/",
-    "https://idreamcareer.com/blog/best-career-options-after-12th-science/"
+    "https://www.upgrad.com/blog/top-career-options-after-engineering/"
 ]
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 chroma_client = chromadb.PersistentClient(path="./career_db")
 collection = chroma_client.get_or_create_collection(name="career_guidance")
-existing_ids = set(collection.get()["ids"])
 
-# --- Add website data ---
-for url in career_urls:
-    if url not in existing_ids:
-        text = extract_text_from_website(url)
-        if text:
-            embedding = model.encode(text).tolist()
-            collection.add(ids=[url], documents=[text], embeddings=[embedding])
+# --- Extract text from website ---
+def extract_text_from_website(url):
+    try:
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        paragraphs = soup.find_all("p")
+        return " ".join([p.get_text() for p in paragraphs]) if paragraphs else "No content available."
+    except requests.RequestException as e:
+        print(f"Error fetching {url}: {e}")
+        return ""
 
-# --- Add Hugging Face dataset data ---
-dataset_chunks = load_hf_dataset_chunks()
-for i, chunk in enumerate(dataset_chunks):
-    chunk_id = f"hf_dataset_chunk_{i}"
-    if chunk_id not in existing_ids and chunk.strip():
-        embedding = model.encode(chunk).tolist()
-        collection.add(ids=[chunk_id], documents=[chunk], embeddings=[embedding])
+# --- Load dataset from Hugging Face and chunk ---
+def load_hf_dataset_chunks(dataset_path="Pradeep016/career-guidance-qa-dataset", chunk_size=10):
+    try:
+        dataset = load_dataset(dataset_path, split="train")
+        rows = [f"{row['question']} {row['answer']}" for row in dataset if row['question'] and row['answer']]
+        
+        chunks = []
+        for i in range(0, len(rows), chunk_size):
+            chunk = " ".join(rows[i:i + chunk_size])
+            chunks.append(chunk)
+        return chunks
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        return []
+
+# --- Process Data ---
+def process_data():
+    existing_ids = set(collection.get()["ids"])
+
+    # Add website data
+    for url in career_urls:
+        if url not in existing_ids:
+            text = extract_text_from_website(url)
+            if text:
+                embedding = model.encode(text).tolist()
+                collection.add(ids=[url], documents=[text], embeddings=[embedding])
+
+    # Add Hugging Face dataset data
+    dataset_chunks = load_hf_dataset_chunks()
+    for i, chunk in enumerate(dataset_chunks):
+        chunk_id = f"hf_dataset_chunk_{i}"
+        if chunk_id not in existing_ids and chunk.strip():
+            embedding = model.encode(chunk).tolist()
+            collection.add(ids=[chunk_id], documents=[chunk], embeddings=[embedding])
+
+    # Create a flag file to indicate data is ready
+    with open(DATA_READY_FLAG, "w") as f:
+        f.write("Data processing completed.")
+
+# --- Check if Data is Already Processed ---
+if not os.path.exists(DATA_READY_FLAG):
+    print("Processing data for the first time. This may take a while...")
+    process_data()
+else:
+    print("Data is already processed. Skipping data processing step.")
 
 # --- Gemini Config ---
 genai.configure(api_key="AIzaSyCYYUDOTqdhMC_NDbrQS-htFND7vocAIes")
@@ -293,22 +304,4 @@ def run_rag_for_query(query):
     conversation_history.append(f"AI Response: {response.text.strip()}")
     return response.text.strip()
 
-
-
 # --- CLI Entry ---
-print("Script started...")
-input_method = input("Would you like to speak or type your query? (speak/type): ").strip().lower()
-
-if input_method == "speak":
-    query = record_and_transcribe()
-elif input_method == "type":
-    query = input("Enter your career-related question: ")
-else:
-    print("Invalid input method selected. Exiting...")
-    exit(1)
-
-if query:
-    response = run_rag_for_query(query)
-    print("\n--- Guidance ---\n", response)
-else:
-    print("No query entered.")

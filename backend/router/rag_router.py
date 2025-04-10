@@ -7,6 +7,9 @@ from backend.models.reminder import schedule_email
 
 router = APIRouter()
 
+@router.get("/")
+async def read_rag():
+    return {"message": "RAG endpoint"}
 class Message(BaseModel):
     message: str
 

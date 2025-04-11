@@ -48,10 +48,3 @@ async def get_remote_vs_onsite_chart():
     return {"image": f"data:image/png;base64,{image_base64}"}
 
 
-# @router.get("/analytics/career_bubble_chart")
-# async def get_career_bubble_chart():
-#     """
-#     Endpoint to return the career bubble chart as a base64 image.
-#     """
-#     image_base64 = generate_career_bubble_chart()
-#     return {"image": f"data:image/png;base64,{image_base64}"}
